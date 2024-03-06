@@ -1,0 +1,179 @@
+#include <Ewma.h>
+#include <MS5611.h>
+#include <SD.h>
+#include <USBHost_t36.h>
+MS5611 MS5611(0x77);
+
+USBHost USB_SER;
+USBHub hub1(USB_SER);
+USBSerial_BigBuffer USB_serial(USB_SER, 1); // Handles anything up to 512 bytes
+
+const float seapres = 1013.25; // reference number; do not change
+const int drogue_pin = 25;
+const int main_pin = 24; 
+const int buzzer = 23;
+
+double maxalt = 0;
+const int main_threshold = 150; //150m ~ 500ft
+double initial_altitude;
+bool drogue_deployed = false;
+bool main_deployed = false;
+
+bool alt_timer_enabled = false;
+unsigned long alt_timer;
+
+const unsigned long igniter_on_duration = 500;
+unsigned long currentTime;
+unsigned long main_timestamp;
+unsigned long drogue_timestamp;
+
+const float alpha = 0.2;
+Ewma ewma_pres(alpha);
+Ewma ewma_temp(alpha);
+
+File file;
+
+void setup()
+{
+
+    USB_SER.begin();
+
+    Serial.begin(115200);
+    Serial.println("System initializing...");
+    if (MS5611.begin() == true)
+    {
+      Serial.println("MS5611 found.");
+    }
+    else
+    {
+      Serial.println("MS5611 not found. halt.");
+      // while (1);
+    }
+    if (!SD.begin(BUILTIN_SDCARD))
+    {
+      Serial.println("initialization failed!");
+      return;
+    }
+    Serial.println("initialization done.");
+    //file.seek(0);
+
+    if(!file)
+    {
+      Serial.println("failure to open file");
+    }
+
+    pinMode(drogue_pin, OUTPUT);
+    pinMode(main_pin, OUTPUT);
+    pinMode(buzzer, OUTPUT);
+    digitalWrite(buzzer, HIGH);
+
+}
+
+void loop()
+{
+  file = SD.open("rocket.txt", FILE_WRITE);
+  MS5611.read();
+  currentTime = millis();
+  double temp = MS5611.getTemperature();
+  double pres = MS5611.getPressure();
+  ewma_pres.filter(pres);
+  ewma_temp.filter(temp);
+
+  // Calculates altitute from smoothened temp and pres
+  double alt_measurement = getAltitude(ewma_temp.output, ewma_pres.output);
+  
+  // Write to file and serial monitor
+
+  // Serial.print("\tMillis: ");
+  // Serial.print(millis(), 2);
+  // Serial.print("\tTemperature: ");
+  // Serial.print(temp);
+  // Serial.print("\tPressure: ");
+  // Serial.print(pres);
+  // Serial.print("\tAltitude: ");
+  // Serial.print(alt);
+  // Serial.println();
+
+  //prints in time, temp, pres, alt format
+  //makes csv
+  file.print(millis(), 2);
+  file.print(",");
+  file.print(temp, 2);
+  file.print(",");
+  file.print(pres, 2);
+  file.print(",");
+  file.print(alt_measurement, 2);
+  file.println();
+
+  
+  if (currentTime < 3000) { 
+    return; // Puts a delay for 3 seconds to allow pressure sensor to stablize readings
+  }
+
+  if (initial_altitude == 0) { //intended to execute once, to set a reference point for where ground altitude was
+    initial_altitude = alt_measurement;
+  }
+  
+  // PARACHUTE 1 DEPLOYEMENT
+  if(drogue_deployed == false && alt_measurement < maxalt) // Checks if altitude is decreasing (primitive derivative to find apogee)
+  {
+    if(alt_timer_enabled == false) // Stopwatch starts
+    {
+      alt_timer = currentTime;
+      alt_timer_enabled = true;
+    }
+    
+    // If stopwatch reaches 800 milliseconds execute deploy thing. 
+    //This is to make sure that altitude is decreasing for 800 milliseconds and that it's just not a noise spike
+    if((currentTime - alt_timer >= 800)) 
+    {
+      digitalWrite(drogue_pin, HIGH);
+      file.print("Drogue ignited at ms");
+      file.print(currentTime);
+      file.println();
+      drogue_timestamp = currentTime;
+
+      if (currentTime - drogue_timestamp >= igniter_on_duration) // This is to make sure that ignition charge is set for x milliseconds
+      {
+        digitalWrite(drogue_pin, LOW);
+        file.print("Drogue turned off at ms");
+        file.print(currentTime);
+        file.println();
+        drogue_deployed = true;
+        alt_timer_enabled = false;
+      }
+    }
+  }
+  else if(drogue_deployed == false && alt_measurement >= maxalt)   // Maximum altitude updater
+  {
+    alt_timer_enabled = false;
+    maxalt = alt_measurement;
+  }
+  
+
+  // PARACHUTE 2 DEPLOYEMENT
+  if(drogue_deployed == true && main_deployed == false && alt_measurement <= initial_altitude + main_threshold) //relative way of checking if main chute level is reached
+  {
+    digitalWrite(main_pin, HIGH);
+    main_timestamp = currentTime;
+    file.print("Main ignited at ms");
+    file.print(currentTime);
+    file.println();
+
+    if (currentTime - main_timestamp >= igniter_on_duration)
+    {
+      digitalWrite(drogue_pin, LOW);
+      file.print("Main turned off at ms");
+      file.print(currentTime);
+      file.println();
+      main_deployed = true;
+    }
+  }
+
+  file.close(); //ensures data is saved to file in case of power loss, needs to be called every loop
+}
+
+double getAltitude(double temp, double pres) // Calculates altitude from temperature and pressure
+{
+  return (( ( pow( (seapres/pres) , (1 / 5.257) ) - 1)*(temp + 273.15)) / 0.0065);
+}
