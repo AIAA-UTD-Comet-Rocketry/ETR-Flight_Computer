@@ -2,6 +2,8 @@
 #include <MS5611.h>
 #include <SD.h>
 #include <USBHost_t36.h>
+#include <Wire.h>
+
 MS5611 MS5611(0x77);
 
 USBHost USB_SER;
