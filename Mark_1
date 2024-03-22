@@ -2,6 +2,8 @@
 #include <MS5611.h>
 #include <SD.h>
 #include <USBHost_t36.h>
+#include <Wire.h>
+
 MS5611 MS5611(0x77);
 
 USBHost USB_SER;
@@ -40,6 +42,7 @@ void setup()
 
     Serial.begin(115200);
     Serial.println("System initializing...");
+    Wire.begin();
     if (MS5611.begin() == true)
     {
       Serial.println("MS5611 found.");
