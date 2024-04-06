@@ -1,14 +1,9 @@
 #include <Ewma.h>
 #include <MS5611.h>
 #include <SD.h>
-#include <USBHost_t36.h>
 #include <Wire.h>
 
 MS5611 MS5611(0x77);
-
-USBHost USB_SER;
-USBHub hub1(USB_SER);
-USBSerial_BigBuffer USB_serial(USB_SER, 1); // Handles anything up to 512 bytes
 
 const float seapres = 1013.25; // reference number; do not change
 const int drogue_pin = 25;
@@ -37,9 +32,6 @@ File file;
 
 void setup()
 {
-
-    USB_SER.begin();
-
     Serial.begin(115200);
     Serial.println("System initializing...");
     Wire.begin();
@@ -58,7 +50,7 @@ void setup()
       return;
     }
     Serial.println("initialization done.");
-    //file.seek(0);
+    // file.seek(0);
 
     if(!file)
     {
@@ -87,25 +79,25 @@ void loop()
   
   // Write to file and serial monitor
 
-  // Serial.print("\tMillis: ");
-  // Serial.print(millis(), 2);
-  // Serial.print("\tTemperature: ");
-  // Serial.print(temp);
-  // Serial.print("\tPressure: ");
-  // Serial.print(pres);
-  // Serial.print("\tAltitude: ");
-  // Serial.print(alt);
-  // Serial.println();
+  Serial.print("\tMillis: ");
+  Serial.print(millis());
+  Serial.print("\tTemperature: ");
+  Serial.print(temp);
+  Serial.print("\tPressure: ");
+  Serial.print(pres);
+  Serial.print("\tAltitude: ");
+  Serial.print(alt_measurement);
+  Serial.println();
 
   //prints in time, temp, pres, alt format
   //makes csv
-  file.print(millis(), 2);
+  file.print(millis(), 3);
   file.print(",");
-  file.print(temp, 2);
+  file.print(temp, 3);
   file.print(",");
-  file.print(pres, 2);
+  file.print(pres, 3);
   file.print(",");
-  file.print(alt_measurement, 2);
+  file.print(alt_measurement, 3);
   file.println();
 
   
@@ -131,16 +123,30 @@ void loop()
     if((currentTime - alt_timer >= 800)) 
     {
       digitalWrite(drogue_pin, HIGH);
-      file.print("Drogue ignited at ms");
+
+      Serial.print("Drogue ignited at ");
+      Serial.print(currentTime);
+      Serial.print(" ms");
+      Serial.println();
+
+      file.print("Drogue ignited at ");
       file.print(currentTime);
+      file.print(" ms");
       file.println();
       drogue_timestamp = currentTime;
 
       if (currentTime - drogue_timestamp >= igniter_on_duration) // This is to make sure that ignition charge is set for x milliseconds
       {
         digitalWrite(drogue_pin, LOW);
-        file.print("Drogue turned off at ms");
+
+        Serial.print("Drogue turned off at ");
+        Serial.print(currentTime);
+        Serial.print(" ms");
+        Serial.println();
+
+        file.print("Drogue turned off at ");
         file.print(currentTime);
+        file.print(" ms");
         file.println();
         drogue_deployed = true;
         alt_timer_enabled = false;
@@ -159,15 +165,29 @@ void loop()
   {
     digitalWrite(main_pin, HIGH);
     main_timestamp = currentTime;
-    file.print("Main ignited at ms");
+    
+    Serial.print("Main ignited at ");
+    Serial.print(currentTime);
+    Serial.print(" ms");
+    Serial.println();
+
+    file.print("Main ignited at ");
     file.print(currentTime);
+    file.print(" ms");
     file.println();
 
     if (currentTime - main_timestamp >= igniter_on_duration)
     {
       digitalWrite(drogue_pin, LOW);
-      file.print("Main turned off at ms");
+
+      Serial.print("Main turned off at ");
+      Serial.print(currentTime);
+      Serial.print(" ms");
+      Serial.println();
+
+      file.print("Main turned off at ");
       file.print(currentTime);
+      file.print(" ms");
       file.println();
       main_deployed = true;
     }
